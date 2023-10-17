@@ -1,0 +1,660 @@
+---
+title: "Analysis of US Household Incomes"
+author: "Shreyas Srinath"
+output:
+  html_document:
+    theme: cerulean
+    toc: true
+    toc_float: true
+---
+
+<h3>1) Introduction </h3>
+<br />
+
+
+The United States has routinely collected information regarding household
+incomes across multiple states, districts, counties and cities. This data
+can then be further analyzed to provide a snapshot of the state of modern
+American households.
+
+By analyzing data found on Kaggle from the year 2017, I have attempted to 
+break down a rich dataset into its constituent parts to uncover patterns,
+insights and interesting facts about the US as it pertains to annual incomes.
+
+<br />
+<h3>2) Data </h3>
+<br />
+
+**Citation:** Golden Oak Research Group, LLC. “U.S. Income Database Kaggle”. <br />
+**Publication:** 5, August 2017. <br />
+**Accessed:** 13, December 2022. <br />
+
+The data is obtained from a report of *Golden Oak Research Group*, which has
+partitioned a larger dataset to be used by city planners and real estate 
+developers. 
+
+The dataset comprises 30,000+ rows of household income data with geographical,
+regional and statistical indicators.
+
+The following attributes are clearly defined:
+
+1) <var>id</var> : A random row identifier (character) <br />
+2) <var>State_Code</var> : State identifier (character) <br />
+3) <var>State_Name</var> : State name (character) <br />
+4) <var>State_ab</var> : State Code (character) <br />
+5) <var>County</var> : County Name (character) <br />
+6) <var>City</var> : City Name (character) <br />
+7) <var>Place</var> : Place Name (character) <br />
+8) <var>Type</var> : Place Type (character). Can be: <br />
+                                -> Borough <br />
+                                -> CDP <br />
+                                -> City <br />
+                                -> Community <br />
+                                -> County <br />
+                                -> Municipality <br />
+                                -> Town <br />
+                                -> Track <br />
+                                -> Urban <br />
+                                -> Village <br />
+9) <var>Primary</var> : Primary Type (character) <br />
+10) <var>Zip_Code</var> : Zip Code (character) <br />
+11) <var>Area_Code</var> : Area Code (double) <br />
+12) <var>ALand</var> : Land Area (double) <br />
+13) <var>AWater</var> : Water Area (double) <br />
+14) <var>Lat</var> : Latitude Coordinate (double) <br />
+15) <var>Lon</var> : Longitude Coordinate (double) <br />
+16) <var>Mean</var> : Mean Household Income in $ (double) <br />
+17) <var>Median</var> : Median Household Income in $ (double) <br />
+18) <var>Stddev</var> : Standard Deviation in $ (double) <br />
+19) <var>sum_w</var> : Unidentified metric (double) <br />
+
+<br />
+<h3>3) Importing Libraries </h3> <br />
+I have employed the <var>tidyverse</var>, <var>ggplot2</var>, <var>dplyr</var>,
+<var>forcats</var> and <var>mapview</var> libraries for the analysis. <br />
+<br />
+
+```{r setup, warning = FALSE}
+
+#######################
+# Importing Libraries #
+#######################
+
+library(tidyverse)
+library(sf)
+library(ggplot2)
+library(mapview) # Used to plot clusters geographically
+library(dplyr)
+library(fastDummies) # Used to generate dummy variables
+library(forcats)
+
+```
+
+<h3>4) Importing Dataset </h3> <br />
+I have used the <var>read_csv</var> method to import the data as it is stored in 
+the *Comma Separated Values* format. <br />
+<br />
+
+```{r, warning = FALSE}
+
+#####################
+# Importing Dataset #
+#####################
+
+dataset <- as.data.frame(read_csv("kaggle_income.csv"))
+# Display first six rows
+head(dataset)
+
+```
+
+<br />
+<h3>5) Tidying Dataset </h3> <br />
+I have identified a single observational row with a missing value. Since the data
+that is missing is qualitative, I decided to omit that row from further 
+analysis. <br /> 
+<br />
+
+```{r, warning = FALSE}
+##########################
+# Handling Missing Values#
+##########################
+
+colSums(is.na(dataset))
+# Identify the indices for the missing value
+which(is.na(dataset), arr.ind = TRUE)
+# Remove that entry from the dataset
+dataset <- dataset[-27548,]
+# Check for missing values
+colSums(is.na(dataset))
+```
+
+<br />
+<h3>6) Preliminary Analysis </h3> <br />
+This is done for understanding the dimensionality the levels for
+the qualitative variables and correlations for the quantiative variables. <br />
+<br />
+
+```{r, warning = FALSE}
+
+############################
+# Understanding the Dataset#
+############################
+
+dim(dataset)
+# Dataset has 32525 rows and 19 variables
+
+# Check Levels and Count for qualitative variables
+
+# - State_Name
+sort(unique(dataset$State_Name))
+length(unique(dataset$State_Name))
+
+# - Type
+sort(unique(dataset$Type))
+length(unique(dataset$Type))
+
+# - Primary
+sort(unique(dataset$Primary))
+length(unique(dataset$Primary))
+
+########################
+# Checking Correlations#
+########################
+
+cor(dataset[c(12:17)])
+# Slight positive correlation between Latitude and Mean Income
+
+```
+
+<br />
+<h3>7) Region-wise Analysis </h3> <br />
+
+<br />
+In order to summarise statistics for a given region, I have employed forcats
+to lump the states according to their respective geographical regions
+within the US. 
+
+Here is a brief overview of state-wise distribution of incomes: <br /> 
+<br />
+
+```{r, warning = FALSE}
+#############################
+# Grouping States by Region #
+#############################
+
+dataset%>%
+  mutate(region = fct_collapse(State_Name,
+                               NewEngland = c("Connecticut", "Maine", 
+                                              "Massachusetts", "New Hampshire", 
+                                              "Rhode Island", "Vermont"),
+                               MidAtlantic = c("Delaware", "Maryland", 
+                                               "New Jersey", "New York", 
+                                               "Pennsylvania", "Virginia"),
+                               South = c("Alabama", "Arkansas", "Florida", 
+                                         "Georgia", "Kentucky", "Louisiana", 
+                                         "Mississippi", "Missouri", 
+                                         "North Carolina", "South Carolina", 
+                                         "Tennessee",  
+                                         "West Virginia"),
+                               Midwest = c("Illinois", "Indiana", "Iowa", 
+                                           "Kansas", "Michigan", "Minnesota", 
+                                           "Nebraska", "North Dakota", "Ohio", 
+                                           "South Dakota", "Wisconsin"),
+                               SouthWest = c("Arizona", "New Mexico", 
+                                             "Oklahoma", "Texas"),
+                               West = c("Alaska", "California", "Colorado", 
+                                        "Hawaii", "Idaho", "Montana", "Nevada", 
+                                        "Oregon", "Utah", "Washington", 
+                                        "Wyoming"))) -> state_data
+unique(state_data$region)
+
+
+##########################
+# Statewise Total Incomes#
+##########################
+
+NewEngland<-state_data%>%
+  select(State_ab,County,City,region,Median)%>%
+  group_by(region == "NewEngland",State_ab)
+
+NewEngland%>%
+  group_by(State_ab)%>%
+  summarise(total=sum(Median)) -> NewEnglandSummary
+
+
+ggplot(NewEnglandSummary, aes(x =reorder(State_ab,desc(total)), 
+                       y=total,
+                       fill=total)) + 
+  geom_bar(stat="identity", show.legend = FALSE)+
+  scale_y_continuous(n.breaks = 16, labels=scales::comma) +
+  scale_fill_gradient(low="blue", high="red") +
+  xlab("State") + ylab("Statewise Total Income in $") +
+  ggtitle("Total Incomes by State")
+
+
+```
+
+<br />
+<h4>7.1) Grouping US States by Avg Median Income </h4> <br />
+Summarising US Regions by Average Median Income helps us understand which 
+portions of the US are earning higher on average.
+
+The results are discussed below: <br /> 
+<br />
+
+
+```{r, warning = FALSE}
+#######################################
+# Grouping US Regions by Median Income#
+#######################################
+
+state_data%>%
+  group_by(region)%>%
+  summarise(AvgMedianInc = mean(Median))%>%
+  ggplot(mapping = aes(x=AvgMedianInc, y=fct_reorder(region, AvgMedianInc))) +
+  geom_bar(stat = "identity", width=0.7, show.legend = FALSE, fill = "#85bb65") +
+  coord_flip() +
+  geom_text(aes(label = round(AvgMedianInc, digits = 2)), vjust = 2,
+            size = 3, color = "white") +
+  xlab("Region") +
+  ylab("Average Median Income in $") +
+  ggtitle("US Regions ordered by Avg. Median Income in $") 
+
+```
+
+<br />
+<h4>7.2) Discussion for New England States</h4> <br />
+We dive deeper to New England States to understand which states tend to
+outperform others on average.
+
+The results are discussed below: <br /> 
+<br />
+
+```{r, warning = FALSE}
+
+###############
+# NEW ENGLAND #
+###############
+
+# Filter observational rows for New England States
+state_data%>%
+  filter(region == "NewEngland")%>%
+  group_by(State_Name, State_ab)%>%
+  summarise(StateAvgInc = mean(Median))%>%
+  arrange(desc(StateAvgInc)) -> NewEnglandData
+
+# Show Data for New England States
+head(NewEnglandData)
+
+# Plot New England States based on Avg Median Income
+ggplot(NewEnglandData, mapping = aes(x = reorder(State_Name, StateAvgInc), 
+                                     y = StateAvgInc,
+                                     fill = State_ab)) + 
+  geom_bar(stat="identity", show.legend = FALSE) +
+  scale_y_continuous(n.breaks = 16, labels=scales::comma) +
+  geom_text(aes(label = round(StateAvgInc, digits = 2)), vjust = 2,
+            size = 4, color = "white") +
+  xlab("State") +
+  ylab("Average Earnings of State in $") +
+  ggtitle("New England States ordered by Avg Median Income in $") 
+
+```
+<br />
+**Connecticut** and **Massachusetts** dominate the households with higher average
+incomes since these states have the highest concentration of capital and
+industries whereas the likes of Rhode Island, Vermont, New Hampshire and Maine
+rely on income from tourism which is seasonal.
+<br /> 
+
+<br />
+<h4>7.3) Discussion for Mid Atlantic States</h4> <br />
+Checking which Mid Atlantic States tend to outperform other states on average.
+
+The results are discussed below: <br /> 
+<br />
+
+```{r, warning = FALSE}
+################
+# MID ATLANTIC #
+################
+
+# Filter observational rows for only Mid Atlantic States 
+state_data%>%
+  filter(region == "MidAtlantic")%>%
+  group_by(State_Name, State_ab)%>%
+  summarise(StateAvgInc = mean(Median))%>%
+  arrange(desc(StateAvgInc)) -> MidAtlanticData
+
+# Display first six rows of filtered data
+head(MidAtlanticData)
+
+# Plot states in Mid Atlantic region by Avg Median Income
+ggplot(MidAtlanticData, mapping = aes(x = reorder(State_Name, StateAvgInc), 
+                                     y = StateAvgInc,
+                                     fill = State_ab)) + 
+  geom_bar(stat="identity", show.legend = FALSE) +
+  scale_y_continuous(n.breaks = 16, labels=scales::comma) +
+  geom_text(aes(label = round(StateAvgInc, digits = 2)), vjust = 2,
+            size = 4, color = "white") +
+  xlab("State") +
+  ylab("Average Earnings of State in $") +
+  ggtitle("Mid Atlantic States ordered by Avg Median Income in $")
+
+```
+
+<br />
+**New Jersey** and **Maryland** dominate the households with higher average
+incomes but the distribution of household income remains relatively uniform.
+<br /> 
+
+
+<br />
+<h4>7.3) Discussion for Southern States</h4> <br />
+Checking which Mid Atlantic States tend to outperform other states on average.
+
+The results are discussed below: <br /> 
+<br />
+
+```{r, warning = FALSE}
+################
+# SOUTH REGION #
+################
+
+# Filter observational rows for Southern States
+state_data%>%
+  filter(region == "South")%>%
+  group_by(State_Name, State_ab)%>%
+  summarise(StateAvgInc = mean(Median))%>%
+  arrange(desc(StateAvgInc)) -> SouthData
+
+# Display first 6 rows
+head(SouthData)
+
+# Plot southern states by Avg Median Income
+ggplot(SouthData, mapping = aes(x = reorder(State_ab, StateAvgInc), 
+                                y = StateAvgInc,
+                                fill = State_ab)) + 
+  geom_bar(stat="identity", show.legend = FALSE) +
+  scale_y_continuous(n.breaks = 16, labels=scales::comma) +
+  geom_text(aes(label = round(StateAvgInc, digits = 2)), vjust = 2,
+            size = 2, color = "white") +
+  xlab("State") +
+  ylab("Average Earnings of State in $") +
+  ggtitle("Southern States ordered by Avg Median Income in $") 
+
+```
+
+<br />
+**Florida** and **Georgia** dominate the households with higher average
+incomes but the distribution of household income remains relatively uniform.
+<br /> 
+
+<br />
+<h3> 8) State-wise Analysis</h3> <br />
+Plotting states on the basis of their Average Median Incomes reveals a
+clear dichotomy between Lower Income, Middle Income and Higher Income states
+as shown. <br /> 
+<br />
+
+```{r, warning = FALSE}
+############################################
+# Grouping States by Average Median Income #
+############################################
+
+dataset%>%
+  group_by(State_Name)%>%
+  summarise(AvgMedians = mean(Median))%>%
+  ggplot(mapping=aes(x=AvgMedians, y= fct_reorder(State_Name, AvgMedians))) + 
+  geom_point() +
+  xlab("Average of State's Median Income ($)") +
+  ylab("State") +
+  ggtitle("States Ordered by Median Income (in Avg $ per State)") +
+  theme(text = element_text(size = 10), element_line(size = 1)) 
+```
+
+<br />
+<h4> 8.1) Analysis for New York State</h4> <br />
+BY further looking at NY Counties, we can begin to analyze which counties
+perform better and plot them geographically to realize where high earning
+clusters lie.<br /> 
+<br />
+
+```{r, warning = FALSE}
+
+###############################
+# Analysis for New York State #
+###############################
+
+# Subset the dataset using dplyr to obtain rows for New York
+dataset%>%
+  filter(State_ab == "NY") -> datasetNY
+# Display first six rows
+head(datasetNY)
+
+# Summarise the NY Data based on Latitudes, Longitudes and Average Income
+# for the top 10 earning counties
+datasetNY%>%
+  group_by(County)%>%
+  summarise(AvgLat = mean(Lat),
+            AvgLon = mean(Lon),
+            AvgInc = median(Median))%>%
+  arrange(desc(AvgInc))%>%
+  slice(1:10) -> sumdatasetNY
+
+
+# Display first six rows of NY Data
+head(sumdatasetNY)
+
+# Plot the Avg. Median Income for each county in NY in descending order
+sumdatasetNY%>%
+  ggplot(mapping=aes(x=AvgInc, y= fct_reorder(County, AvgInc), fill= AvgInc)) + 
+  geom_bar(stat="identity", show.legend = FALSE) +
+  scale_fill_gradient2(high = 'blue', mid = 'snow', low = 'red',
+                       midpoint = median(sumdatasetNY$AvgInc)) +
+  xlab("Average of NY's Median Income ($)") +
+  ylab("NY Counties") +
+  ggtitle("NY Counties Ordered by Median Income (in Avg $)") 
+  
+# Plot the counties on a map with markers to indicate highest earning counties
+mapview(sumdatasetNY, xcol = "AvgLon", ycol = "AvgLat", crs = 4269, grid=FALSE,
+        cex = "AvgInc", burst=TRUE, legend = TRUE)
+
+
+# Plot earnings by Type of location
+datasetNY%>%
+  group_by(Type)%>%
+  summarise(AvgEarnings = mean(Median))%>%
+  arrange(desc(AvgEarnings))%>%
+  ggplot(mapping=aes(x=AvgEarnings, y=fct_reorder(Type, AvgEarnings),
+                     fill = Type)) + 
+  geom_bar(stat = "identity",width=0.5, show.legend = FALSE) + coord_flip() +
+  geom_text(aes(label = round(AvgEarnings, digits = 2)), vjust = 2,
+            size = 4, color = "white") +
+  xlab("Type of County") +
+  ylab("Average Earnings of County in $") +
+  ggtitle("NY County Types ordered by Avg. Earnings in $") 
+
+```
+
+<br />
+<h4> 8.2) Analysis for Maine State</h4> <br />
+BY further looking at ME Counties, we can begin to analyze which counties
+perform better and plot them geographically to realize where high earning
+clusters lie.<br /> 
+<br />
+
+```{r, warning = FALSE}
+
+############################
+# Analysis for Maine State #
+############################
+
+# Subset the dataset using dplyr to obtain rows for Maine
+dataset%>%
+  filter(State_ab == "ME") -> datasetME
+# Display first six rows
+head(datasetME)
+
+# Summarise the NY Data based on Latitudes, Longitudes and Average Income
+# for the top earning counties
+datasetME%>%
+  group_by(County)%>%
+  summarise(AvgLat = mean(Lat),
+            AvgLon = mean(Lon),
+            AvgInc = median(Median))%>%
+  arrange(desc(AvgInc))-> sumdatasetME
+
+# Display first six rows of ME Data
+head(sumdatasetME)
+
+# Plot the Avg. Median Income for each county in ME in descending order
+sumdatasetME%>%
+  ggplot(mapping=aes(x=AvgInc, y= fct_reorder(County, AvgInc), fill= AvgInc)) + 
+  geom_bar(stat="identity", show.legend = FALSE) +
+  scale_fill_gradient2(high = 'blue', mid = 'snow', low = 'yellow',
+                       midpoint = median(sumdatasetME$AvgInc)) +
+  xlab("Average of ME's Median Income ($)") +
+  ylab("ME Counties") +
+  ggtitle("ME Counties Ordered by Median Income (in Avg $)") 
+
+# Plot the counties on a map with markers to indicate highest earning counties
+mapview(sumdatasetME, xcol = "AvgLon", ycol = "AvgLat", crs = 4269, grid=FALSE,
+        cex = "AvgInc", burst=TRUE, legend = TRUE)
+
+
+# Plot earnings by Type of location
+datasetME%>%
+  group_by(Type)%>%
+  summarise(AvgEarnings = mean(Median))%>%
+  arrange(desc(AvgEarnings))%>%
+  ggplot(mapping=aes(x=AvgEarnings, y=fct_reorder(Type, AvgEarnings),
+                     fill = Type)) + 
+  geom_bar(stat = "identity",width=0.5, show.legend = FALSE) + coord_flip() +
+  geom_text(aes(label = round(AvgEarnings, digits = 2)), vjust = 2,
+            size = 4, color = "white") +
+  xlab("Type of County") +
+  ylab("Average Earnings of County in $") +
+  ggtitle("ME County Types ordered by Avg. Earnings in $") 
+
+```
+
+<br />
+<h4> 8.3) Analysis for Texas State</h4> <br />
+BY further looking at TX Counties, we can begin to analyze which counties
+perform better and plot them geographically to realize where high earning
+clusters lie.<br /> 
+<br />
+
+```{r, warning = FALSE}
+
+############################
+# Analysis for Texas State #
+############################
+
+# Subset the dataset using dplyr to obtain rows for Maine
+dataset%>%
+  filter(State_ab == "TX") -> datasetTX
+# Display first six rows
+head(datasetTX)
+
+# Summarise the TX Data based on Latitudes, Longitudes and Average Income
+# for the top earning counties
+datasetTX%>%
+  group_by(County)%>%
+  summarise(AvgLat = mean(Lat),
+            AvgLon = mean(Lon),
+            AvgInc = median(Median))%>%
+  slice(1:15)%>%
+  arrange(desc(AvgInc))-> sumdatasetTX
+
+# Display first six rows of TX Data
+head(sumdatasetTX)
+
+# Plot the Avg. Median Income for each county in TX in descending order
+sumdatasetTX%>%
+  ggplot(mapping=aes(x=AvgInc, y= fct_reorder(County, AvgInc), fill= AvgInc)) + 
+  geom_bar(stat="identity", show.legend = FALSE) +
+  scale_fill_gradient2(high = 'blue', mid = 'red', low = 'white',
+                       midpoint = median(sumdatasetTX$AvgInc)) +
+  xlab("Average of TX's Median Income ($)") +
+  ylab("TX Counties") +
+  ggtitle("TX Counties Ordered by Median Income (in Avg $)") 
+
+# Plot the counties on a map with markers to indicate highest earning counties
+mapview(sumdatasetTX, xcol = "AvgLon", ycol = "AvgLat", crs = 4269, grid=FALSE,
+        cex = "AvgInc", burst=TRUE, legend = TRUE)
+
+
+# Plot earnings by Type of location
+datasetTX%>%
+  group_by(Type)%>%
+  summarise(AvgEarnings = mean(Median))%>%
+  arrange(desc(AvgEarnings))%>%
+  ggplot(mapping=aes(x=AvgEarnings, y=fct_reorder(Type, AvgEarnings),
+                     fill = Type)) + 
+  geom_bar(stat = "identity",width=0.5, show.legend = FALSE) + coord_flip() +
+  geom_text(aes(label = round(AvgEarnings, digits = 2)), vjust = 2,
+            size = 3, color = "white") +
+  xlab("Type of County") +
+  ylab("Average Earnings of County in $") +
+  ggtitle("TX County Types ordered by Avg. Earnings in $") 
+
+```
+<br />
+<h3>9) Regression Analysis </h3> <br />
+
+Regression Analysis is used to fit the data for a given dependent variable in
+terms of the other independent variables to estimate values of the dependent
+variable given the other parameters.
+
+We have employed the <var>fastDummies</var> library to initially convert
+qualitative information into a set of dummy variables (0/1) to indicate the 
+absence or presence of a quality respectively.
+
+We have then performed Regression analysis using Median as the dependent 
+variable. 
+
+```{r}
+# Reading updated dataset
+regdata<-read.csv("regdata.csv")
+# Replacing qualitative variables with dummy data
+dumdata<-dummy_cols(regdata,select_columns = c("County","State_Name","Type"))
+# Generating Regression Model with Median income as dependent variable
+MLRmodel <- lm(Median ~ State_Name + Type + ALand, data=dumdata)
+# Summary Results for Regression
+summary(MLRmodel)
+
+```
+
+<br />
+Regression analysis reveals that a State's Type and Area of Land play
+a minimal role in determining Median Income.
+
+We would require household incomes, industry types and migration details 
+to conduct a more successful analysis using more powerful algorithms.
+<br />
+
+<br />
+<h3>10) Conclusion </h3> <br />
+
+By analyzing US household incomes, we have identified the top performing regions
+as the *New England* and *Mid Atlantic* regions.
+
+New England States are dominated by *Massachusetts* and *Connecticut* having
+far more significant earnings than the other states.
+
+Mid Atlantic and Southern States show a more even distribution of household 
+median income.
+
+Conducting a more in-depth analysis for individual states (NY, ME and TX),
+we could identify clusters where there are high earning counties which can be
+beneficial for city planners, real estate developers or out-of-state migrants
+hoping to move into a particular region.
+
+While Regression Analysis could not reveal further insight, we hope that in the
+future, with details for households and industries that we can employ more
+powerful analysis techniques.
+
+</br>
+</body>
+</html>
